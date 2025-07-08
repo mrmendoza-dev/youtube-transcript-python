@@ -1,11 +1,17 @@
-from tkinter import Tk, Label, Entry, Button, Text, Scrollbar, VERTICAL, END, filedialog, Frame
+from PySide6.QtWidgets import (
+	QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
+	QLabel, QTextEdit, QFileDialog
+)
+from PySide6.QtGui import QPalette, QColor, QFont
+from PySide6.QtCore import Qt
 from youtube_transcript_api import YouTubeTranscriptApi
 import re
+import sys
 
 def slugify(title_text):
-    title_text = re.sub(r'[^\w\s]', '', title_text)
-    title_text = re.sub(r'\s+', '-', title_text)
-    return title_text.lower()
+	title_text = re.sub(r'[^\w\s]', '', title_text)
+	title_text = re.sub(r'\s+', '-', title_text)
+	return title_text.lower()
 
 def get_transcript(video_id, with_timestamps=False):
 	try:
@@ -16,115 +22,157 @@ def get_transcript(video_id, with_timestamps=False):
 			transcript_text = ' '.join([item['text'] for item in transcript])
 			return transcript_text
 	except Exception as e:
-		print(f"Error: {e}")
 		return None
 
 def get_video_id(video_url):
-
 	patterns = [
-		r"youtube\.com/watch\?v=([^\&\#]+)",  # Standard format with exclusion of '&' and '#' in capture
-		r"youtube\.com/watch\?.*v=([^\&\#]+)",  # Format with additional parameters, excluding '&' and '#'
-		r"youtube\.com/shorts/([^\?]+)",  # Shorts format, excluding '?'
-		r"youtu\.be/([^\?]+)",  # Shortened format, excluding '?'
-		r"youtube\.com/embed/([^\?]+)"  # Embed format, excluding '?'
+		r"youtube\.com/watch\?v=([^\&\#]+)",
+		r"youtube\.com/watch\?.*v=([^\&\#]+)",
+		r"youtube\.com/shorts/([^\?]+)",
+		r"youtu\.be/([^\?]+)",
+		r"youtube\.com/embed/([^\?]+)"
 	]
-
 	for pattern in patterns:
 		match = re.search(pattern, video_url)
 		if match:
 			return match.group(1)
 	return None
 
+class TranscriptFetcher(QWidget):
+	def __init__(self):
+		super().__init__()
+		self.setWindowTitle("YouTube Transcript Fetcher")
+		self.setGeometry(100, 100, 600, 400)
+		self.setMinimumSize(500, 400)
 
-def fetch_and_display_transcript():
-	video_url = url_entry.get()
-	video_id = get_video_id(video_url)
-	transcript_text = get_transcript(video_id)
-	transcript_display.delete('1.0', END)
-	if transcript_text is not None:
-		transcript_display.insert(END, transcript_text)
-		download_button.config(state="normal")
-		download_full_button.config(state="normal")
-	else:
-		download_button.config(state="disabled")
-		download_full_button.config(state="disabled")
+		# Dark mode palette
+		dark_palette = QPalette()
+		dark_palette.setColor(QPalette.Window, QColor(30, 30, 30))
+		dark_palette.setColor(QPalette.WindowText, QColor(220, 220, 220))
+		dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
+		dark_palette.setColor(QPalette.AlternateBase, QColor(40, 40, 40))
+		dark_palette.setColor(QPalette.ToolTipBase, QColor(30, 30, 30))
+		dark_palette.setColor(QPalette.ToolTipText, QColor(220, 220, 220))
+		dark_palette.setColor(QPalette.Text, QColor(220, 220, 220))
+		dark_palette.setColor(QPalette.Button, QColor(40, 40, 40))
+		dark_palette.setColor(QPalette.ButtonText, QColor(220, 220, 220))
+		dark_palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+		dark_palette.setColor(QPalette.Highlight, QColor(60, 120, 200))
+		dark_palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+		self.setPalette(dark_palette)
+		self.setAutoFillBackground(True)
+		self.setFont(QFont("Segoe UI", 11))
 
+		main_layout = QVBoxLayout()
+		main_layout.setSpacing(18)
+		main_layout.setContentsMargins(24, 24, 24, 24)
 
-def download_transcript():
-	transcript_text = transcript_display.get("1.0", END)
-	title_text = slugify(title_entry.get().strip())
-	video_url = url_entry.get()
-	initial_filename = f"transcript-{title_text}.txt" if title_text else "transcript.txt"
+		# --- Input Row ---
+		input_row = QHBoxLayout()
+		self.url_input = QLineEdit()
+		self.url_input.setPlaceholderText("YouTube Video URL")
+		self.url_input.setMinimumWidth(300)
+		self.url_input.setStyleSheet("QLineEdit { background: #222; color: #eee; border-radius: 6px; padding: 8px; border: 1px solid #444; }")
+		input_row.addWidget(QLabel("URL:"))
+		input_row.addWidget(self.url_input)
 
-	file_path = filedialog.asksaveasfilename(
-		initialfile=initial_filename,
-		defaultextension=".txt",
-		filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
-	)
+		self.title_input = QLineEdit()
+		self.title_input.setPlaceholderText("Title (optional)")
+		self.title_input.setMinimumWidth(150)
+		self.title_input.setStyleSheet("QLineEdit { background: #222; color: #eee; border-radius: 6px; padding: 8px; border: 1px solid #444; }")
+		input_row.addWidget(QLabel("Title:"))
+		input_row.addWidget(self.title_input)
+		main_layout.addLayout(input_row)
 
-	if file_path:
-		with open(file_path, "w", encoding="utf-8") as file:
-			if title_text:
-				file.write(f"Title: {title_text}\n")
-			file.write(f"URL: {video_url}\n\n")
-			file.write(transcript_text)
+		# --- Buttons Row ---
+		btn_row = QHBoxLayout()
+		self.fetch_btn = QPushButton("Fetch Transcript")
+		self.fetch_btn.setStyleSheet("QPushButton { background: #3b4252; color: #fff; border-radius: 6px; padding: 8px 18px; font-weight: bold; } QPushButton:hover { background: #4c566a; }")
+		self.fetch_btn.clicked.connect(self.fetch_transcript)
+		btn_row.addWidget(self.fetch_btn)
 
+		self.save_btn = QPushButton("Download Simple")
+		self.save_btn.setEnabled(False)
+		self.save_btn.setStyleSheet("QPushButton { background: #444; color: #fff; border-radius: 6px; padding: 8px 18px; font-weight: bold; } QPushButton:disabled { background: #222; color: #888; }")
+		self.save_btn.clicked.connect(self.save_transcript)
+		btn_row.addWidget(self.save_btn)
 
-def download_transcript_with_timestamps():
-	title_text = slugify(title_entry.get().strip())
-	video_url = url_entry.get()
-	initial_filename = f"transcript-timestamps-{title_text}.txt" if title_text else "transcript_w_timestamps.txt"
-	video_id = get_video_id(video_url)
-	transcript_with_timestamps = get_transcript(video_id, with_timestamps=True)
+		self.save_full_btn = QPushButton("Download Full")
+		self.save_full_btn.setEnabled(False)
+		self.save_full_btn.setStyleSheet("QPushButton { background: #444; color: #fff; border-radius: 6px; padding: 8px 18px; font-weight: bold; } QPushButton:disabled { background: #222; color: #888; }")
+		self.save_full_btn.clicked.connect(self.save_transcript_with_timestamps)
+		btn_row.addWidget(self.save_full_btn)
+		main_layout.addLayout(btn_row)
 
-	title_text = title_entry.get().strip()
-	if transcript_with_timestamps is not None:
-		file_path = filedialog.asksaveasfilename(
-			initialfile=initial_filename,
-			defaultextension=".txt",
-			filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
-		)
+		# --- Transcript Display ---
+		self.transcript_display = QTextEdit()
+		self.transcript_display.setReadOnly(True)
+		self.transcript_display.setStyleSheet("QTextEdit { background: #181818; color: #eee; border-radius: 6px; padding: 10px; border: 1px solid #444; }")
+		main_layout.addWidget(self.transcript_display, stretch=1)
+
+		# --- Status Label ---
+		self.status = QLabel("")
+		self.status.setStyleSheet("QLabel { color: #8ec07c; font-weight: bold; min-height: 24px; }")
+		main_layout.addWidget(self.status)
+
+		self.setLayout(main_layout)
+
+		# Data
+		self.last_transcript = None
+		self.last_transcript_full = None
+
+	def fetch_transcript(self):
+		url = self.url_input.text().strip()
+		video_id = get_video_id(url)
+		if not video_id:
+			self.status.setText("Invalid YouTube URL.")
+			self.transcript_display.clear()
+			self.save_btn.setEnabled(False)
+			self.save_full_btn.setEnabled(False)
+			return
+		transcript = get_transcript(video_id)
+		transcript_full = get_transcript(video_id, with_timestamps=True)
+		if transcript:
+			self.transcript_display.setPlainText(transcript)
+			self.status.setText("Transcript fetched.")
+			self.save_btn.setEnabled(True)
+			self.save_full_btn.setEnabled(True)
+			self.last_transcript = transcript
+			self.last_transcript_full = transcript_full
+		else:
+			self.transcript_display.clear()
+			self.status.setText("No transcript found or error occurred.")
+			self.save_btn.setEnabled(False)
+			self.save_full_btn.setEnabled(False)
+
+	def save_transcript(self):
+		title = slugify(self.title_input.text().strip())
+		url = self.url_input.text().strip()
+		initial_filename = f"transcript-{title}.txt" if title else "transcript.txt"
+		file_path, _ = QFileDialog.getSaveFileName(self, "Save Transcript", initial_filename, "Text Files (*.txt);;All Files (*)")
 		if file_path:
-			with open(file_path, "w", encoding="utf-8") as file:
-				if title_text:
-					file.write(f"Title: {title_text}\n")
-				file.write(f"URL: {video_url}\n\n")
-				for item in transcript_with_timestamps:
+			with open(file_path, "w", encoding="utf-8") as f:
+				if title:
+					f.write(f"Title: {title}\n")
+				f.write(f"URL: {url}\n\n")
+				f.write(self.last_transcript or "")
+
+	def save_transcript_with_timestamps(self):
+		title = slugify(self.title_input.text().strip())
+		url = self.url_input.text().strip()
+		initial_filename = f"transcript-timestamps-{title}.txt" if title else "transcript_w_timestamps.txt"
+		file_path, _ = QFileDialog.getSaveFileName(self, "Save Transcript with Timestamps", initial_filename, "Text Files (*.txt);;All Files (*)")
+		if file_path and self.last_transcript_full:
+			with open(file_path, "w", encoding="utf-8") as f:
+				if title:
+					f.write(f"Title: {title}\n")
+				f.write(f"URL: {url}\n\n")
+				for item in self.last_transcript_full:
 					line = f"[{item['start']}] {item['text']}\n"
-					file.write(line)
-	else:
-		print("Error: No transcript available or an error occurred")
+					f.write(line)
 
-root = Tk()
-root.title("YouTube Transcript Fetcher")
-
-input_frame = Frame(root)
-input_frame.pack(fill="x", padx=5, pady=5)
-url_label = Label(input_frame, text="YouTube Video URL:")
-url_label.pack(side="left")
-url_entry = Entry(input_frame, width=50)
-url_entry.pack(side="left", expand=True, fill="x")
-
-title_label = Label(input_frame, text="Title (optional):")
-title_label.pack(side="left", padx=(10,0))
-title_entry = Entry(input_frame, width=30)
-title_entry.pack(side="left", fill="x", expand=True)
-
-button_frame = Frame(root)
-button_frame.pack(fill="x", padx=5, pady=5)
-submit_button = Button(button_frame, text="Fetch Transcript", command=fetch_and_display_transcript)
-submit_button.pack(side="left", expand=True)
-download_button = Button(button_frame, text="Download Simple", command=download_transcript, state="disabled")
-download_button.pack(side="left", expand=True)
-download_full_button = Button(button_frame, text="Download Full", command=download_transcript_with_timestamps, state="disabled")
-download_full_button.pack(side="left", expand=True)
-
-display_frame = Frame(root)
-display_frame.pack(fill="both", expand=True, padx=5, pady=5)
-transcript_display = Text(display_frame, height=10)
-transcript_display.pack(side="left", fill="both", expand=True)
-scroll = Scrollbar(display_frame, command=transcript_display.yview, orient=VERTICAL)
-transcript_display.configure(yscrollcommand=scroll.set)
-scroll.pack(side="right", fill="y")
-
-root.mainloop()
+if __name__ == "__main__":
+	app = QApplication(sys.argv)
+	win = TranscriptFetcher()
+	win.show()
+	sys.exit(app.exec())
